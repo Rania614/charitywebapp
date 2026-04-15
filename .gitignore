@@ -1,4 +1,11 @@
 # Logs
+node_modules/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+
 logs
 *.log
 npm-debug.log*
