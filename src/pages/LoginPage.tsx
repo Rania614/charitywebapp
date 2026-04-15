@@ -6,7 +6,6 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useAuth } from "@/hooks/useAuth";
-import type { UserRole } from "@/types/domain";
 import logo from "@/assets/logo.png";
 import authIllustration from "@/assets/auth-illustration.jpg";
 import { Eye, EyeOff } from "lucide-react";
@@ -18,7 +17,7 @@ export default function LoginPage() {
   const [remember, setRemember] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const { login, loginAsRole } = useAuth();
+  const { login } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -34,19 +33,6 @@ export default function LoginPage() {
       navigate("/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "البريد أو اسم المستخدم أو كلمة المرور غير صحيحة");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const quickLogin = async (role: UserRole) => {
-    setError("");
-    setLoading(true);
-    try {
-      await loginAsRole(role);
-      navigate("/dashboard");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "دخول التجربة غير متاح (تحقق من ALLOW_DEMO_LOGIN على الخادم)");
     } finally {
       setLoading(false);
     }
@@ -141,29 +127,6 @@ export default function LoginPage() {
             </CardContent>
           </Card>
 
-          {/* Quick role access - demo only */}
-          <div className="mt-6">
-            <p className="text-xs text-muted-foreground text-center mb-3">دخول سريع (للتجربة)</p>
-            <div className="grid grid-cols-2 gap-2">
-              {([
-                { role: "patient" as UserRole, label: "مريض" },
-                { role: "doctor" as UserRole, label: "طبيب" },
-                { role: "employee" as UserRole, label: "موظف" },
-                { role: "admin" as UserRole, label: "مدير" },
-              ]).map(({ role, label }) => (
-                <Button
-                  key={role}
-                  variant="outline"
-                  size="sm"
-                  disabled={loading}
-                  onClick={() => void quickLogin(role)}
-                  className="text-xs"
-                >
-                  دخول كـ {label}
-                </Button>
-              ))}
-            </div>
-          </div>
         </div>
       </div>
     </div>
