@@ -10,12 +10,30 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useAuth } from "@/hooks/useAuth";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, getApiBase, getToken } from "@/lib/api";
 import { fetchRequests } from "@/lib/queries";
 import type { MedicalRequest } from "@/types/domain";
 import { Plus, Upload, FileText, Eye, Printer, AlertCircle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { RejectionReport } from "@/components/RejectionReport";
+
+async function uploadDocumentsToCloudinary(files: File[]): Promise<string[]> {
+  if (files.length === 0) return [];
+  const maxBytes = 10 * 1024 * 1024;
+  for (const file of files) {
+    if (file.size > maxBytes) {
+      throw new Error(`حجم الملف كبير: ${file.name} (الحد الأقصى 10MB)`);
+    }
+  }
+
+  const form = new FormData();
+  files.forEach((file) => form.append("files", file));
+  const data = await apiFetch<{ files: Array<{ url: string }> }>("/api/uploads", {
+    method: "POST",
+    body: form,
+  });
+  return data.files.map((f) => f.url);
+}
 
 export default function RequestsPage() {
   const { user, logout } = useAuth();
@@ -29,6 +47,8 @@ export default function RequestsPage() {
   const [newItemDesc, setNewItemDesc] = useState("");
   const [newAmount, setNewAmount] = useState("");
   const [newDescription, setNewDescription] = useState("");
+  const [newFiles, setNewFiles] = useState<File[]>([]);
+  const [uploadError, setUploadError] = useState("");
 
   const { data: requests = [], isLoading } = useQuery({
     queryKey: ["requests"],
@@ -37,17 +57,19 @@ export default function RequestsPage() {
   });
 
   const createMutation = useMutation({
-    mutationFn: () =>
-      apiFetch("/api/requests", {
+    mutationFn: async () => {
+      const documents = await uploadDocumentsToCloudinary(newFiles);
+      return apiFetch("/api/requests", {
         method: "POST",
         body: JSON.stringify({
           title: newTitle.trim(),
           itemDescription: newItemDesc.trim() || newTitle.trim(),
           amountRequested: Number(newAmount) || 0,
           description: newDescription.trim() || newTitle.trim(),
-          documents: [] as string[],
+          documents,
         }),
-      }),
+      });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["requests"] });
       queryClient.invalidateQueries({ queryKey: ["stats"] });
@@ -56,10 +78,21 @@ export default function RequestsPage() {
       setNewItemDesc("");
       setNewAmount("");
       setNewDescription("");
+      setNewFiles([]);
+      setUploadError("");
+    },
+    onError: (error) => {
+      setUploadError(error instanceof Error ? error.message : "فشل الإرسال");
     },
   });
 
   if (!user) return null;
+
+  const fileProxyUrl = (url: string, download = false) => {
+    const token = getToken();
+    const tokenQuery = token ? `&token=${encodeURIComponent(token)}` : "";
+    return `${getApiBase()}/api/uploads/proxy?url=${encodeURIComponent(url)}${download ? "&download=1" : ""}${tokenQuery}`;
+  };
 
   return (
     <DashboardLayout role={user.role} userName={user.name} onLogout={() => { logout(); navigate("/login"); }}>
@@ -88,6 +121,7 @@ export default function RequestsPage() {
                 className="space-y-4 pt-4"
                 onSubmit={(e) => {
                   e.preventDefault();
+                  setUploadError("");
                   if (!newTitle.trim() || !newAmount || Number(newAmount) <= 0) return;
                   createMutation.mutate();
                 }}
@@ -138,17 +172,36 @@ export default function RequestsPage() {
                 </div>
                 <div className="space-y-2">
                   <Label>المستندات المؤيدة</Label>
-                  <div className="border-4 border-dashed rounded-[2rem] p-10 text-center hover:border-primary/50 transition-all cursor-pointer bg-muted/20 group opacity-60">
+                  <label className="block border-2 border-dashed rounded-2xl p-6 text-center hover:border-primary/50 transition-all cursor-pointer bg-muted/20 group">
+                    <input
+                      type="file"
+                      className="hidden"
+                      multiple
+                      accept=".pdf,.png,.jpg,.jpeg,.webp"
+                      onChange={(e) => {
+                        const files = Array.from(e.target.files ?? []);
+                        setNewFiles(files);
+                      }}
+                    />
                     <div className="w-16 h-16 bg-background rounded-2xl shadow-sm mx-auto flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
                       <Upload className="w-8 h-8 text-primary" />
                     </div>
-                    <p className="text-sm font-bold text-foreground">رفع الملفات قريباً</p>
-                    <p className="text-xs text-muted-foreground mt-2 font-medium">يمكنك إضافة أسماء ملفات لاحقاً من لوحة الإدارة</p>
-                  </div>
+                    <p className="text-sm font-bold text-foreground">اضغطي لاختيار الملفات (Cloudinary)</p>
+                    <p className="text-xs text-muted-foreground mt-2 font-medium">PDF / JPG / PNG / WEBP</p>
+                  </label>
+                  {newFiles.length > 0 && (
+                    <div className="space-y-1">
+                      {newFiles.map((f) => (
+                        <p key={f.name} className="text-xs text-muted-foreground truncate">
+                          {f.name}
+                        </p>
+                      ))}
+                    </div>
+                  )}
                 </div>
-                {createMutation.isError && (
+                {(createMutation.isError || uploadError) && (
                   <p className="text-sm text-destructive text-center">
-                    {createMutation.error instanceof Error ? createMutation.error.message : "فشل الإرسال"}
+                    {uploadError || (createMutation.error instanceof Error ? createMutation.error.message : "فشل الإرسال")}
                   </p>
                 )}
                 <Button
@@ -281,10 +334,33 @@ export default function RequestsPage() {
                       {viewRequest.documents.map((doc, i) => (
                         <div
                           key={i}
-                          className="p-3 bg-muted rounded-xl flex items-center justify-between group hover:bg-primary/5 transition-colors cursor-pointer border"
+                          className="p-3 bg-muted rounded-xl flex items-center justify-between gap-3 group hover:bg-primary/5 transition-colors border"
                         >
-                          <span className="text-xs font-bold text-foreground truncate">{doc}</span>
-                          <FileText className="w-4 h-4 text-primary" />
+                          <a
+                            href={fileProxyUrl(doc)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-xs font-bold text-foreground truncate hover:underline"
+                          >
+                            {doc.split("/").pop() ?? `document-${i + 1}`}
+                          </a>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <a
+                              href={fileProxyUrl(doc)}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-[11px] text-primary hover:underline"
+                            >
+                              عرض
+                            </a>
+                            <a
+                              href={fileProxyUrl(doc, true)}
+                              className="text-[11px] text-muted-foreground hover:underline"
+                            >
+                              تنزيل
+                            </a>
+                            <FileText className="w-4 h-4 text-primary" />
+                          </div>
                         </div>
                       ))}
                     </div>
