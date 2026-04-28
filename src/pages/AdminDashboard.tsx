@@ -1,18 +1,33 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { StatsCard } from "@/components/StatsCard";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useAuth } from "@/hooks/useAuth";
 import { fetchRequests, fetchStats, fetchUsers } from "@/lib/queries";
 import type { User } from "@/types/domain";
 import { Users, FileText, BarChart3, CreditCard, Plus, Trash2, Edit } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { apiFetch } from "@/lib/api";
+import { useToast } from "@/components/ui/use-toast";
 
 export default function AdminDashboard() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const { data: users = [] } = useQuery({
     queryKey: ["users", "admin"],
@@ -31,6 +46,29 @@ export default function AdminDashboard() {
     queryFn: fetchStats,
     enabled: !!user && user.role === "admin",
   });
+  const [confirmUser, setConfirmUser] = useState<User | null>(null);
+
+  const toggleActiveMutation = useMutation({
+    mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) =>
+      apiFetch(`/api/users/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ isActive }),
+      }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["users", "admin"] }),
+        queryClient.invalidateQueries({ queryKey: ["users", "management"] }),
+      ]);
+      toast({ title: "تم التحديث", description: "تم تحديث حالة الحساب." });
+    },
+    onError: (error) => {
+      toast({
+        title: "تعذر تحديث الحالة",
+        description: error instanceof Error ? error.message : "حدث خطأ غير متوقع",
+        variant: "destructive",
+      });
+    },
+  });
 
   if (!user) return null;
 
@@ -42,6 +80,19 @@ export default function AdminDashboard() {
     if (u.role === "doctor") return "طبيب مراجع";
     if (u.role === "employee") return "موظف";
     return "مريض";
+  };
+
+  const handleToggleUser = (targetUser: User) => {
+    if (targetUser.id === user.id) {
+      toast({
+        title: "غير مسموح",
+        description: "لا يمكنك تعطيل حسابك الحالي.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setConfirmUser(targetUser);
   };
 
   return (
@@ -69,6 +120,35 @@ export default function AdminDashboard() {
           variant="accent"
         />
       </div>
+      <AlertDialog open={!!confirmUser} onOpenChange={(open) => { if (!open) setConfirmUser(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirmUser?.isActive === false ? "إلغاء تعطيل الحساب" : "تعطيل الحساب"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmUser
+                ? confirmUser.isActive === false
+                  ? `هل تريد إلغاء تعطيل حساب "${confirmUser.name}"؟`
+                  : `هل تريد تعطيل حساب "${confirmUser.name}"؟`
+                : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>إلغاء</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (!confirmUser) return;
+                const willDisable = confirmUser.isActive !== false;
+                toggleActiveMutation.mutate({ id: confirmUser.id, isActive: !willDisable });
+                setConfirmUser(null);
+              }}
+            >
+              تأكيد
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="shadow-card border-none rounded-3xl lg:col-span-2">
@@ -115,14 +195,29 @@ export default function AdminDashboard() {
                       </div>
                       <div>
                         <p className="text-sm font-bold text-foreground">{u.name}</p>
-                        <p className="text-xs text-muted-foreground">{roleLine(u)}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {roleLine(u)} {u.isActive === false ? "• معطل" : ""}
+                        </p>
                       </div>
                     </div>
                     <div className="flex items-center gap-1">
-                      <Button size="icon" variant="ghost" className="h-8 w-8 rounded-lg hover:bg-primary/10" type="button">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8 rounded-lg hover:bg-primary/10"
+                        type="button"
+                        onClick={() => navigate("/users")}
+                      >
                         <Edit className="w-4 h-4 text-primary" />
                       </Button>
-                      <Button size="icon" variant="ghost" className="h-8 w-8 rounded-lg hover:bg-destructive/10" type="button">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8 rounded-lg hover:bg-destructive/10"
+                        type="button"
+                        onClick={() => handleToggleUser(u)}
+                        disabled={toggleActiveMutation.isPending}
+                      >
                         <Trash2 className="w-4 h-4 text-destructive" />
                       </Button>
                     </div>

@@ -8,19 +8,23 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
 import { fetchUsers } from "@/lib/queries";
-import type { UserRole } from "@/types/domain";
-import { Search, UserPlus, Shield, UserCheck, UserCog, MoreVertical, ShieldCheck, Mail, Key } from "lucide-react";
+import type { User, UserRole } from "@/types/domain";
+import { Search, UserPlus, Shield, UserCheck, UserCog, MoreVertical, ShieldCheck, Pencil } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/ui/use-toast";
 
@@ -31,6 +35,7 @@ export default function UsersPage() {
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
   const [openCreate, setOpenCreate] = useState(false);
+  const [openEdit, setOpenEdit] = useState(false);
 
   const [newName, setNewName] = useState("");
   const [newEmail, setNewEmail] = useState("");
@@ -39,6 +44,17 @@ export default function UsersPage() {
   const [newRole, setNewRole] = useState<"doctor" | "employee" | "admin">("doctor");
   const [newPhone, setNewPhone] = useState("");
   const [newNationalId, setNewNationalId] = useState("");
+
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [editUsername, setEditUsername] = useState("");
+  const [editPassword, setEditPassword] = useState("");
+  const [editRole, setEditRole] = useState<"doctor" | "employee" | "admin">("doctor");
+  const [editPhone, setEditPhone] = useState("");
+  const [editNationalId, setEditNationalId] = useState("");
+  const [editAddress, setEditAddress] = useState("");
+  const [confirmUser, setConfirmUser] = useState<User | null>(null);
 
   const { data: users = [] } = useQuery({
     queryKey: ["users", "management"],
@@ -80,6 +96,85 @@ export default function UsersPage() {
       });
     },
   });
+
+  const updateUserMutation = useMutation({
+    mutationFn: () => {
+      if (!editingUserId) throw new Error("لم يتم تحديد المستخدم");
+      return apiFetch<{ user: unknown }>(`/api/users/${editingUserId}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          name: editName.trim(),
+          email: editEmail.trim() || null,
+          username: editUsername.trim() || null,
+          role: editRole,
+          phone: editPhone.trim() || null,
+          nationalId: editNationalId.trim() || null,
+          address: editAddress.trim() || null,
+          ...(editPassword.trim() ? { password: editPassword } : {}),
+        }),
+      });
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["users", "management"] });
+      setOpenEdit(false);
+      setEditingUserId(null);
+      setEditPassword("");
+      toast({ title: "تم التحديث", description: "تم تعديل بيانات المستخدم بنجاح." });
+    },
+    onError: (error) => {
+      toast({
+        title: "تعذر تحديث المستخدم",
+        description: error instanceof Error ? error.message : "حدث خطأ غير متوقع",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const toggleActiveMutation = useMutation({
+    mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) =>
+      apiFetch(`/api/users/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ isActive }),
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["users", "management"] });
+      toast({ title: "تم التحديث", description: "تم تحديث حالة الحساب بنجاح." });
+    },
+    onError: (error) => {
+      toast({
+        title: "تعذر تحديث الحالة",
+        description: error instanceof Error ? error.message : "حدث خطأ غير متوقع",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const openEditDialog = (u: User) => {
+    if (u.role === "patient") return;
+    setEditingUserId(u.id);
+    setEditName(u.name ?? "");
+    setEditEmail(u.email ?? "");
+    setEditUsername(u.username ?? "");
+    setEditPassword("");
+    setEditRole((u.role === "admin" || u.role === "doctor" || u.role === "employee") ? u.role : "doctor");
+    setEditPhone(u.phone ?? "");
+    setEditNationalId(u.nationalId ?? "");
+    setEditAddress(u.address ?? "");
+    setOpenEdit(true);
+  };
+
+  const handleToggleUserActive = (u: User) => {
+    if (u.id === user?.id) {
+      toast({
+        title: "غير مسموح",
+        description: "لا يمكنك تعطيل حسابك الحالي.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setConfirmUser(u);
+  };
 
   const managementUsers = useMemo(() => {
     return users.filter(
@@ -242,6 +337,147 @@ export default function UsersPage() {
             </form>
           </DialogContent>
         </Dialog>
+        <Dialog open={openEdit} onOpenChange={setOpenEdit}>
+          <DialogContent className="max-w-lg rounded-2xl">
+            <DialogHeader>
+              <DialogTitle>تعديل بيانات المستخدم</DialogTitle>
+              <DialogDescription>يمكنك تعديل جميع بيانات المستخدم ثم حفظ التغييرات.</DialogDescription>
+            </DialogHeader>
+            <form
+              className="space-y-4 pt-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!editName.trim() || !editingUserId) return;
+                updateUserMutation.mutate();
+              }}
+            >
+              <div className="space-y-2">
+                <Label htmlFor="edit-name">الاسم</Label>
+                <Input
+                  id="edit-name"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  placeholder="الاسم الكامل"
+                  required
+                />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-username">اسم المستخدم</Label>
+                  <Input
+                    id="edit-username"
+                    value={editUsername}
+                    onChange={(e) => setEditUsername(e.target.value)}
+                    placeholder="username"
+                    dir="ltr"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-email">البريد الإلكتروني</Label>
+                  <Input
+                    id="edit-email"
+                    type="email"
+                    value={editEmail}
+                    onChange={(e) => setEditEmail(e.target.value)}
+                    placeholder="name@example.com"
+                    dir="ltr"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-password">كلمة مرور جديدة (اختياري)</Label>
+                  <Input
+                    id="edit-password"
+                    type="password"
+                    value={editPassword}
+                    onChange={(e) => setEditPassword(e.target.value)}
+                    placeholder="اتركها فارغة بدون تغيير"
+                    dir="ltr"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>الدور الوظيفي</Label>
+                  <Select value={editRole} onValueChange={(v) => setEditRole(v as "doctor" | "employee" | "admin")}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="doctor">طبيب</SelectItem>
+                      <SelectItem value="employee">موظف</SelectItem>
+                      <SelectItem value="admin">مدير</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-phone">رقم الهاتف (اختياري)</Label>
+                  <Input
+                    id="edit-phone"
+                    value={editPhone}
+                    onChange={(e) => setEditPhone(e.target.value)}
+                    placeholder="01000000000"
+                    dir="ltr"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-national-id">الرقم القومي (اختياري)</Label>
+                  <Input
+                    id="edit-national-id"
+                    value={editNationalId}
+                    onChange={(e) => setEditNationalId(e.target.value)}
+                    placeholder="xxxxxxxxxxxxxx"
+                    dir="ltr"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-address">العنوان (اختياري)</Label>
+                <Input
+                  id="edit-address"
+                  value={editAddress}
+                  onChange={(e) => setEditAddress(e.target.value)}
+                  placeholder="العنوان"
+                />
+              </div>
+              <DialogFooter>
+                <Button type="submit" className="gradient-primary text-primary-foreground" disabled={updateUserMutation.isPending}>
+                  {updateUserMutation.isPending ? "جاري الحفظ..." : "حفظ التعديلات"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+        <AlertDialog open={!!confirmUser} onOpenChange={(open) => { if (!open) setConfirmUser(null); }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {confirmUser?.isActive === false ? "إعادة تفعيل الحساب" : "تعطيل الحساب"}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {confirmUser
+                  ? confirmUser.isActive === false
+                    ? `هل تريدين إلغاء تعطيل حساب "${confirmUser.name}"؟`
+                    : `هل تريدين تعطيل حساب "${confirmUser.name}"؟`
+                  : ""}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>إلغاء</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  if (!confirmUser) return;
+                  const willDisable = confirmUser.isActive !== false;
+                  toggleActiveMutation.mutate({ id: confirmUser.id, isActive: !willDisable });
+                  setConfirmUser(null);
+                }}
+              >
+                تأكيد
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
@@ -325,15 +561,18 @@ export default function UsersPage() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="start" className="rounded-xl shadow-elevated border-none p-1">
-                            <DropdownMenuItem className="gap-2 rounded-lg cursor-pointer">
-                              <Mail className="w-4 h-4" /> إرسال بريد
+                            <DropdownMenuItem
+                              className="gap-2 rounded-lg cursor-pointer"
+                              onClick={() => openEditDialog(u)}
+                            >
+                              <Pencil className="w-4 h-4" /> تعديل البيانات
                             </DropdownMenuItem>
-                            <DropdownMenuItem className="gap-2 rounded-lg cursor-pointer">
-                              <Key className="w-4 h-4" /> إعادة تعيين كلمة المرور
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem className="gap-2 rounded-lg text-destructive focus:bg-destructive/10 cursor-pointer">
-                              تعطيل الحساب
+                            <DropdownMenuItem
+                              className="gap-2 rounded-lg text-destructive focus:bg-destructive/10 cursor-pointer"
+                              onClick={() => handleToggleUserActive(u)}
+                              disabled={toggleActiveMutation.isPending}
+                            >
+                              {u.isActive === false ? "إعادة تفعيل الحساب" : "تعطيل الحساب"}
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>

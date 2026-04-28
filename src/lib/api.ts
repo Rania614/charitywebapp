@@ -1,9 +1,9 @@
 import type { User } from "@/types/domain";
 
 function apiBase(): string {
-  const raw = import.meta.env.VITE_API_URL as string | undefined;
-  const b = (raw || "http://localhost:4000").replace(/\/$/, "");
-  return b;
+  const raw = (import.meta.env.VITE_API_URL as string | undefined)?.trim();
+  if (!raw) return "";
+  return raw.replace(/\/$/, "");
 }
 
 export function getApiBase(): string {

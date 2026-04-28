@@ -5,7 +5,7 @@ import logo from "@/assets/logo.png";
 import {
   LayoutDashboard, FileText, Calendar, Users, Settings, Bell,
   LogOut, ChevronLeft, ChevronRight, Stethoscope, ClipboardList,
-  BarChart3, Archive, CreditCard, Menu, X, Home, Clock
+  Archive, CreditCard, Menu, X, Home, Clock
 } from "lucide-react";
 
 
@@ -41,7 +41,6 @@ const menuItems: Record<UserRole, { label: string; icon: typeof LayoutDashboard;
     { label: "لوحة التحكم", icon: LayoutDashboard, path: "/dashboard" },
     { label: "المستخدمون", icon: Users, path: "/users" },
     { label: "الطلبات", icon: FileText, path: "/requests" },
-    { label: "الإحصائيات المالية", icon: BarChart3, path: "/financials" },
     { label: "المواعيد", icon: Calendar, path: "/appointments" },
     { label: "أذونات الموظفين", icon: Clock, path: "/permissions" },
     { label: "الإعدادات", icon: Settings, path: "/settings" },

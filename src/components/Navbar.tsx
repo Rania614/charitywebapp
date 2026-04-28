@@ -1,4 +1,4 @@
-import { Bell, Search, User, LogOut, Settings } from "lucide-react";
+import { Bell, User, LogOut, Settings } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
@@ -58,18 +58,7 @@ export function Navbar({ userName, role, onLogout }: NavbarProps) {
   };
 
   return (
-    <header className="h-16 border-b bg-background/50 backdrop-blur-md sticky top-0 z-40 px-4 lg:px-8 flex items-center justify-between">
-      <div className="flex items-center gap-4 flex-1">
-        <div className="hidden md:flex relative w-64 group">
-          <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
-          <input
-            type="text"
-            placeholder="بحث سريع..."
-            className="w-full bg-muted/50 border-none rounded-xl py-2 pr-10 pl-4 text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-all"
-          />
-        </div>
-      </div>
-
+    <header className="h-16 border-b bg-background/50 backdrop-blur-md sticky top-0 z-40 px-4 lg:px-8 flex items-center justify-end">
       <div className="flex items-center gap-2 lg:gap-4">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
